@@ -1,28 +1,31 @@
 import React, { useRef, useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 
-const DEFAULT_TRACKS = [
-  // Example: { name: "Sample.mp3", url: process.env.PUBLIC_URL + "/tracks/sample.mp3" }
-  // You can place your static mp3s in public/tracks/
-];
+const BACKEND_URL = "http://localhost:4000";
+const DEFAULT_TRACKS = []; // Will be loaded from backend
 
 const STORAGE_KEY = "audioplayer_session";
 
 function App() {
-  const [tracks, setTracks] = useState(DEFAULT_TRACKS);
+  const [tracks, setTracks] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [sortAsc, setSortAsc] = useState(true);
   const [durations, setDurations] = useState({});
   const audioRef = useRef();
 
-  // Restore session
+  // Fetch tracks from backend on mount
   useEffect(() => {
+    fetch(`${BACKEND_URL}/tracks-list`)
+      .then((res) => res.json())
+      .then((files) => {
+        setTracks(files.map((name) => ({ name, url: `${BACKEND_URL}/tracks/${encodeURIComponent(name)}` })));
+      });
+    // Optionally restore session (current track, playback rate, time)
     const session = localStorage.getItem(STORAGE_KEY);
     if (session) {
       try {
         const parsed = JSON.parse(session);
-        setTracks(parsed.tracks || DEFAULT_TRACKS);
         setCurrentTrack(parsed.currentTrack || null);
         setPlaybackRate(parsed.playbackRate || 1);
         setTimeout(() => {
@@ -48,13 +51,22 @@ function App() {
     );
   }, [tracks, currentTrack, playbackRate]);
 
-  const handleUpload = (e) => {
+  const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const uploadedTracks = files.map((file) => ({
-      name: file.name,
-      url: URL.createObjectURL(file),
-    }));
-    setTracks((prev) => [...prev, ...uploadedTracks]);
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${BACKEND_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const track = await res.json();
+        setTracks((prev) => [...prev, { name: track.name, url: `${BACKEND_URL}${track.url}` }]);
+      } else {
+        alert(`Failed to upload ${file.name}`);
+      }
+    }
   };
 
   // Format seconds to mm:ss
@@ -72,17 +84,27 @@ function App() {
   };
 
   // Delete track with password
-  const handleDeleteTrack = (track) => {
+  const handleDeleteTrack = async (track) => {
     const pw = prompt("Enter password to delete track:");
     if (pw === "superadmin") {
-      setTracks((prev) => prev.filter((t) => t.url !== track.url));
-      setDurations((prev) => {
-        const d = { ...prev };
-        delete d[track.url];
-        return d;
-      });
-      if (currentTrack && currentTrack.url === track.url) {
-        setCurrentTrack(null);
+      const res = await fetch(`${BACKEND_URL}/tracks/${encodeURIComponent(track.name)}?pw=${encodeURIComponent(pw)}`, { method: 'DELETE' });
+      if (res.ok) {
+        // Refresh track list from backend
+        fetch(`${BACKEND_URL}/tracks-list`)
+          .then((res) => res.json())
+          .then((files) => {
+            setTracks(files.map((name) => ({ name, url: `${BACKEND_URL}/tracks/${encodeURIComponent(name)}` })));
+          });
+        setDurations((prev) => {
+          const d = { ...prev };
+          delete d[track.url];
+          return d;
+        });
+        if (currentTrack && currentTrack.url === track.url) {
+          setCurrentTrack(null);
+        }
+      } else {
+        alert("Failed to delete file on server");
       }
     } else if (pw !== null) {
       alert("Incorrect password");
@@ -141,8 +163,32 @@ function App() {
     // If last track, do nothing (stop)
   };
 
+  // Delete all tracks with password
+  const handleDeleteAll = async () => {
+    const pw = prompt("Enter password to delete ALL tracks:");
+    if (pw === "superadmin") {
+      const res = await fetch(`${BACKEND_URL}/tracks-all?pw=${encodeURIComponent(pw)}`, { method: 'DELETE' });
+      if (res.ok) {
+        // Refresh track list from backend
+        fetch(`${BACKEND_URL}/tracks-list`)
+          .then((res) => res.json())
+          .then((files) => {
+            setTracks(files.map((name) => ({ name, url: `${BACKEND_URL}/tracks/${encodeURIComponent(name)}` })));
+          });
+        setDurations({});
+        setCurrentTrack(null);
+      } else {
+        alert("Failed to delete all files on server");
+      }
+    } else if (pw !== null) {
+      alert("Incorrect password");
+    }
+  };
+
+
+
   return (
-    <div style={{ maxWidth: 480, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <div style={{ maxWidth: 800, margin: "2rem auto", fontFamily: "sans-serif" }}>
       <h2>Simple Audio Player</h2>
       <input
         type="file"
@@ -151,9 +197,10 @@ function App() {
         onChange={handleUpload}
         style={{ marginBottom: 16 }}
       />
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => sortTracks(true)} disabled={sortAsc} style={{ marginRight: 4 }}>Sort A–Z</button>
-        <button onClick={() => sortTracks(false)} disabled={!sortAsc}>Sort Z–A</button>
+        <button onClick={() => sortTracks(false)} disabled={!sortAsc} style={{ marginRight: 16 }}>Sort Z–A</button>
+        <button onClick={handleDeleteAll} style={{ color: 'red', fontWeight: 600 }}>Delete All</button>
       </div>
       <div>
         <h4>Tracks:</h4>
@@ -182,7 +229,20 @@ function App() {
         >
           {currentTrack && currentTrack.url === track.url ? "Playing" : "Play"}
         </button>
-        {track.name}
+        <span
+          style={{
+            marginLeft: 0,
+            maxWidth: 350,
+            display: 'inline-block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            verticalAlign: 'middle',
+            whiteSpace: 'nowrap',
+          }}
+          title={track.name}
+        >
+          {track.name}
+        </span>
         <span style={{ marginLeft: 8, color: '#888', fontSize: '0.9em' }}>
           {durations[track.url] ? formatDuration(durations[track.url]) : <>
             <audio
