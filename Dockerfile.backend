@@ -6,6 +6,6 @@ COPY package.json ./
 RUN npm install express multer cors && npm cache clean --force;
 # Create upload dir at build time (will be mounted over in production)
 RUN mkdir -p /app/tracks
-EXPOSE 80
-ENV PORT=80
+EXPOSE 4000
+ENV PORT=4000
 CMD ["node", "backend.js"]

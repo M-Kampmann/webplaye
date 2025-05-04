@@ -42,14 +42,8 @@ app.delete('/tracks/:filename', (req, res) => {
 // Delete all tracks (with password)
 app.delete('/tracks-all', (req, res) => {
   if (req.query.pw !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
-  fs.readdir(UPLOAD_DIR, (err, files) => {
-    if (err) return res.status(500).json({ error: 'Failed to list files' });
-    const mp3s = files.filter(f => f.endsWith('.mp3'));
-    let deleted = 0;
-    let failed = 0;
-    if (mp3s.length === 0) return res.json({ deleted: 0 });
-    mp3s.forEach((f) => {
-      fs.unlink(path.join(UPLOAD_DIR, f), (err) => {
+  fs.readdirSync(UPLOAD_DIR).forEach(f => {
+    fs.unlinkSync(path.join(UPLOAD_DIR, f));
         if (err) failed++;
         else deleted++;
         if (deleted + failed === mp3s.length) {
