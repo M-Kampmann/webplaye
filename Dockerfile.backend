@@ -1,0 +1,11 @@
+# Backend Dockerfile for Express (file uploads, persistent storage)
+FROM node:18-alpine
+WORKDIR /app
+COPY backend.js ./
+COPY package.json ./
+RUN npm install express multer cors && npm cache clean --force;
+# Create upload dir at build time (will be mounted over in production)
+RUN mkdir -p /app/tracks
+EXPOSE 80
+ENV PORT=80
+CMD ["node", "backend.js"]
