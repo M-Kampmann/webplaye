@@ -44,14 +44,8 @@ app.delete('/tracks-all', (req, res) => {
   if (req.query.pw !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
   fs.readdirSync(UPLOAD_DIR).forEach(f => {
     fs.unlinkSync(path.join(UPLOAD_DIR, f));
-        if (err) failed++;
-        else deleted++;
-        if (deleted + failed === mp3s.length) {
-          res.json({ deleted, failed });
-        }
-      });
-    });
   });
+  res.json({ success: true });
 });
 
 // List all tracks
